@@ -25,6 +25,8 @@ function tryRequire(name) {
 
 const jsTiktoken = tryRequire('js-tiktoken');
 const aiTokenizer = tryRequire('ai-tokenizer');
+const gptTokenizer = tryRequire('gpt-tokenizer');
+const gptTokenizerO200k = tryRequire('gpt-tokenizer/model/gpt-4o');
 
 function nowNs() {
   return process.hrtime.bigint();
@@ -165,6 +167,15 @@ function main() {
     { name: 'bpe-lite gemini', fn: (t) => bpeLite.encode(t, 'gemini') },
   ];
 
+  if (gptTokenizer && gptTokenizerO200k) {
+    openaiImpls.push(
+      { name: 'gpt-tokenizer cl100k', fn: (t) => gptTokenizer.encode(t) },
+      { name: 'gpt-tokenizer o200k', fn: (t) => gptTokenizerO200k.encode(t) },
+    );
+  } else {
+    console.log('Note: gpt-tokenizer not installed; skipping gpt-tokenizer benchmarks.');
+  }
+
   if (encCl100k && encO200k) {
     openaiImpls.push(
       { name: 'js-tiktoken cl100k', fn: (t) => encCl100k.encode(t, 'all') },
@@ -205,7 +216,7 @@ function main() {
   console.log('bpe-lite benchmark');
   console.log(`node ${process.version} (${process.platform}/${process.arch})`);
   console.log(`gc: ${typeof global.gc === 'function' ? 'available' : 'not available (run with --expose-gc)'}`);
-  console.log('Note: bpe-lite "anthropic" is cl100k approximation; "gemini" is Gemma3-style SPM, so comparisons are not apples-to-apples.');
+  console.log('Note: bpe-lite "anthropic" uses Xenova/claude-tokenizer (65k BPE); "gemini" uses Gemma3 SPM. Cross-provider comparisons are not apples-to-apples.');
 
   for (const s of scenarios) {
     const text = makeText(s.kind);

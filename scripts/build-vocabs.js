@@ -152,49 +152,53 @@ async function buildAnthropic() {
   // so intermediate merges can't happen either.
   // NFKC is applied first, so ™→TM, …→..., etc. before BPE.
   const byteOnlyChars = [
-    // Latin-1 supplement symbols (2-byte UTF-8): api=2, our=1 without fix
-    // Removed: § (api=1 confirmed), £ (api=1), © (api=1 confirmed), × (api=1 confirmed)
-    '\u00AE', // ®  (api=2)
-    '\u00B1', // ±  (api=2)
-    '\u00B6', // ¶  (api=2)
-    '\u00F7', // ÷  (api=2)
-    // Math / arrows / punctuation (3-byte UTF-8): api=4 (byte-level), our=1-3 without fix
-    // Removed from list: † (injected below), • (api=1), → (api=1), − (api=1), √ (handled below)
-    //                    ← (handled below via [86,90] injection)
+    // Latin-1 supplement symbols (2-byte UTF-8)
+    // Probe-confirmed api counts (bare / space-prefixed):
+    '\u00A2', // ¢  cent       api=3/3  (Xenova over-merges to 1 — block all)
+    '\u00A5', // ¥  yen        api=3/3  (Xenova gives 2 — block [C2,A5] + space-prefix)
+    '\u00AE', // ®  registered api=2/2
+    '\u00B1', // ±  plus-minus api=2/2
+    '\u00B6', // ¶  pilcrow    api=3/3  (Xenova gives 2 — block to get 3 bytes)
+    '\u00D7', // ×  times      api=2/2  (Xenova merges to 1 — block)
+    '\u00F7', // ÷  divide     api=3/3  (Xenova gives 2 — block to get 3 bytes)
+    // Math / arrows / punctuation (3-byte UTF-8)
     // ‡ handled separately below (can't delete [E2,80] prefix — † and • need it)
-    '\u2191', // ↑  (api=4 — all bytes separate)
-    '\u2193', // ↓  (api=4)
-    '\u2194', // ↔  (api=4)
-    '\u2248', // ≈  (api=4) — confirmed by probe
-    '\u2260', // ≠  (api=4)
-    '\u2264', // ≤  (api=4)
-    '\u2265', // ≥  (api=4)
-    '\u221E', // ∞  (api=4)
-    '\u2211', // ∑  (api=4)
-    '\u220F', // ∏  (api=4)
-    '\u222B', // ∫  (api=4)
+    // ← handled below via [86,90] injection (api=2 bare, 2 space-prefixed)
+    // √ handled below: api=1 bare, 1 space-prefixed (injected path via [88,9A])
+    '\u2191', // ↑  up-arrow   api=3/3
+    '\u2193', // ↓  down-arrow api=3/3
+    '\u2194', // ↔  lr-arrow   api=3/3
+    '\u2248', // ≈  approx     api=3/3
+    '\u2260', // ≠  neq        api=3/3
+    '\u2264', // ≤  leq        api=3/3
+    '\u2265', // ≥  geq        api=3/3
+    '\u221E', // ∞  infinity   api=3/3
+    '\u2211', // ∑  sum        api=3/3
+    '\u220F', // ∏  product    api=3/3
+    '\u222B', // ∫  integral   api=3/3
     // ™ → NFKC → "TM": delete "TM" merged token so it stays as 2 chars
     'TM',
-    // Emoji (4-byte UTF-8): api=3-4, our=1-2 without fix
-    '\u{1F600}', // 😀
-    '\u{1F602}', // 😂
-    '\u{1F914}', // 🤔
-    '\u{1F389}', // 🎉
-    '\u{1F680}', // 🚀
-    '\u{1F30D}', // 🌍
-    '\u{1F525}', // 🔥
-    '\u{1F4A1}', // 💡
-    '\u{2764}',  // ❤ (heavy heart, U+2764, 3-byte)
-    '\u{1F40D}', // 🐍
-    '\u{1F98A}', // 🦊
-    '\u{1F308}', // 🌈
-    '\u{2B50}',  // ⭐ (U+2B50, 3-byte)
-    '\u{1F3B5}', // 🎵
-    '\u{1F3C6}', // 🏆
-    '\u{2615}',  // ☕ (U+2615, 3-byte)
-    '\u{1F4BB}', // 💻
-    '\u{1F44D}', // 👍 (api=3, confirmed by probe)
-    '\u{1F60D}', // 😍 (api=3, confirmed by probe)
+    // Emoji (4-byte UTF-8): api=3-4, our=4 without fix
+    '\u{1F600}', // 😀  api=3
+    '\u{1F602}', // 😂  api=3
+    '\u{1F4A1}', // 💡  api=3
+    '\u{1F4BB}', // 💻  api=3
+    '\u{1F44D}', // 👍  api=3
+    '\u{1F60D}', // 😍  api=3
+    '\u{1F914}', // 🤔  api=4
+    '\u{1F389}', // 🎉  api=4
+    '\u{1F680}', // 🚀  api=4
+    '\u{1F30D}', // 🌍  api=4
+    '\u{1F525}', // 🔥  api=4
+    '\u{1F40D}', // 🐍  api=4
+    '\u{1F98A}', // 🦊  api=4
+    '\u{1F308}', // 🌈  api=4
+    '\u{1F3B5}', // 🎵  api=4
+    '\u{1F3C6}', // 🏆  api=4
+    // 3-byte emoji: api=4 (but ⭐ api=4 and ☕ api=3 — probe confirmed)
+    '\u{2764}',  // ❤  U+2764 3-byte  api=4
+    '\u{2615}',  // ☕  U+2615 3-byte  api=3
+    '\u{2B50}',  // ⭐  U+2B50 3-byte  api=4 (probe: bare our=3 api=4 UNDER — block to get 4)
   ];
 
   for (const ch of byteOnlyChars) {
@@ -222,32 +226,37 @@ async function buildAnthropic() {
     delete vocab[b.slice(1).toString('base64')]; // suffix: [80,A1]
   }
 
-  // Delete [20,E2] (space + E2 prefix byte) — rank 4676 in Xenova.
-  // Context probes confirm Claude does NOT merge space+E2 for any arrow/math symbol:
-  // " ↑" " ↓" " ↔" " ≠" etc. are all 4 separate bytes in Claude (api=4).
-  // All Claude 1-token E2-range symbols (•, €, −, →) have their own suffix pair
-  // paths that work without [20,E2] (e.g. [86,92] enables "→", [82,AC] enables "€").
-  delete vocab[Buffer.from([0x20, 0xE2]).toString('base64')];
+  // Keep [20,E2] in vocab — direct probe (probe-anthropic.js) confirms Claude DOES
+  // merge space+E2: " ↑" " ↓" " ↔" " ≠" etc. are all 3 tokens (api=3), not 4.
+  // Also fixes " ₿" " ₹" " ₩" " ₽": [20,E2]+[82]+[xx] = 3 tokens (api=3 ✓).
+  // Previous deletion was based on faulty differential probe data — reverted.
 
   // Delete [20,E2,80], [20,E2,88], [20,E2,89] — 3-byte space+prefix intermediates.
-  // Prevents partial merges in the E2-80/88/89 Unicode sub-ranges.
+  // Prevents " ‡", " ∞", " ≠" etc. from collapsing to 2 tokens instead of 3.
   for (const hex of ['20E280', '20E288', '20E289']) {
     const key = Buffer.from(hex.match(/../g).map(h => parseInt(h, 16))).toString('base64');
     delete vocab[key];
   }
 
-  // ← (U+2190 = [E2,86,90]): neither "←" nor [86,90] are in Xenova — inject both.
-  // Path: [86,90] merges first, then [E2]+[86,90]→"←", then [20]+[←]=2 tokens.
-  // Context probe: api=2. " ←"=[20,E2,86,90] is absent from Xenova → stays 2.
-  vocab[Buffer.from([0x86, 0x90]).toString('base64')] = hfMerges.length + 200;
-  vocab[Buffer.from([0xE2, 0x86, 0x90]).toString('base64')] = hfMerges.length + 201;
-  delete vocab[Buffer.from([0x20, 0xE2, 0x86, 0x90]).toString('base64')]; // " ←" absent anyway
+  // Delete [20,C2] (space + C2 prefix byte).
+  // Prevents space+C2-range chars from collapsing: e.g. " ¥"=[20,C2,A5] → [20,C2]+[A5]=2
+  // instead of the correct [20]+[C2]+[A5]=3 (Claude gives 3 byte tokens for " ¥").
+  // Safe: chars that Claude keeps merged (£, §, etc.) have their own full-sequence
+  // tokens in Xenova so the path [20]+[C2,xx]→[20,C2,xx] still works without [20,C2].
+  delete vocab[Buffer.from([0x20, 0xC2]).toString('base64')];
 
-  // √ (U+221A = [E2,88,9A]): inject [88,9A] pair so the path [E2]+[88,9A]→"√"
-  // works, giving " √" = 2 tokens [space]+[√]. Context probe: api=2.
-  // "√"=[E2,88,9A] is already in Xenova at rank 54655; [88,9A] is not, inject it.
-  // " √"=[20,E2,88,9A] is absent from Xenova → naturally gives 2 tokens.
-  vocab[Buffer.from([0x88, 0x9A]).toString('base64')] = hfMerges.length + 202;
+  // ← (U+2190 = [E2,86,90]): inject only the [86,90] pair, NOT the full ← token.
+  // Direct probe: bare ← = api=2 ([E2]+[86,90]), " ←" = api=2 ([20,E2]+[86,90]).
+  // With [20,E2] present and [86,90] injected both cases give 2 tokens ✓.
+  vocab[Buffer.from([0x86, 0x90]).toString('base64')] = hfMerges.length + 200;
+  // Do NOT inject [E2,86,90]=← — that would make ← = 1 token but api=2.
+
+  // √ (U+221A = [E2,88,9A]): inject [88,9A] pair + " √"=[20,E2,88,9A] token.
+  // Direct probe: bare √ = api=1 ✓, " √" = api=1 (Claude has " √" as 1 token).
+  // Path: [20]+[E2]+[88]+[9A] → [20,E2]+[88,9A] → [20,E2,88,9A]=" √" = 1 token.
+  // [88,9A] not in Xenova — inject it. [20,E2,88] deleted above → no collision.
+  vocab[Buffer.from([0x88, 0x9A]).toString('base64')] = hfMerges.length + 201;
+  vocab[Buffer.from([0x20, 0xE2, 0x88, 0x9A]).toString('base64')] = hfMerges.length + 202;
 
   // Delete Xenova's aggressive repeated-byte merges (length > 2).
   // Probe confirmed: Claude only keeps pairs (e.g. "aa"), not triples/quadruples.

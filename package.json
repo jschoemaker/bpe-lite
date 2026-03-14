@@ -36,6 +36,7 @@
   "license": "MIT",
   "devDependencies": {
     "ai-tokenizer": "^1.0.6",
+    "gpt-tokenizer": "^3.4.0",
     "js-tiktoken": "^1.0.21"
   },
   "repository": {
