@@ -156,6 +156,7 @@ async function buildAnthropic() {
     // Probe-confirmed api counts (bare / space-prefixed):
     '\u00A2', // ¢  cent       api=3/3  (Xenova over-merges to 1 — block all)
     '\u00A5', // ¥  yen        api=3/3  (Xenova gives 2 — block [C2,A5] + space-prefix)
+    '\u00A9', // ©  copyright  api=2/2  (Xenova has it merged — block [C2,A9])
     '\u00AE', // ®  registered api=2/2
     '\u00B1', // ±  plus-minus api=2/2
     '\u00B6', // ¶  pilcrow    api=3/3  (Xenova gives 2 — block to get 3 bytes)
@@ -233,7 +234,9 @@ async function buildAnthropic() {
 
   // Delete [20,E2,80], [20,E2,88], [20,E2,89] — 3-byte space+prefix intermediates.
   // Prevents " ‡", " ∞", " ≠" etc. from collapsing to 2 tokens instead of 3.
-  for (const hex of ['20E280', '20E288', '20E289']) {
+  // Also delete [20,E2,98]: prevents " ☕" from collapsing to 2 tokens ([20,E2,98]+[95]).
+  // Probe: bare ☕=api=3 ✓, " ☕"=api=3 but our=2 without this fix.
+  for (const hex of ['20E280', '20E288', '20E289', '20E298']) {
     const key = Buffer.from(hex.match(/../g).map(h => parseInt(h, 16))).toString('base64');
     delete vocab[key];
   }
@@ -257,6 +260,25 @@ async function buildAnthropic() {
   // [88,9A] not in Xenova — inject it. [20,E2,88] deleted above → no collision.
   vocab[Buffer.from([0x88, 0x9A]).toString('base64')] = hfMerges.length + 201;
   vocab[Buffer.from([0x20, 0xE2, 0x88, 0x9A]).toString('base64')] = hfMerges.length + 202;
+
+  // Emoji byte-pair injections (injected AFTER byteOnlyChars cleanup which deleted them).
+  // Claude merges the 2nd+3rd bytes of [F0,9F,xx,yy] for certain popular emoji,
+  // giving 3 tokens [F0]+[9F,xx]+[yy] instead of 4 separate bytes.
+  // api=3 emoji confirmed: 😀[98,80], 😂[98,82], 💡[92,A1], 💻[92,BB], 👍[91,8D], 😍[98,8D]
+  // api=4 emoji (e.g. 🤔[A4,94], 🎉[8E,89]) do NOT get [9F,xx] pairs → stay 4 tokens.
+  for (const pair of [[0x9F, 0x91], [0x9F, 0x92], [0x9F, 0x98]]) {
+    vocab[Buffer.from(pair).toString('base64')] = hfMerges.length + 203;
+  }
+
+  // Inject [20,F0]: space + 4-byte-emoji-start.
+  // Allows " 😀" to give [20,F0]+[9F,98]+[80] = 3 tokens (api=3 ✓) instead of 5.
+  // Allows " 🤔" to give [20,F0]+[9F]+[A4]+[94] = 4 tokens (api=4 ✓) instead of 5.
+  vocab[Buffer.from([0x20, 0xF0]).toString('base64')] = hfMerges.length + 204;
+  // Delete [20,F0,9F]: Xenova has this 3-byte token at rank ~41009 (a native Xenova merge).
+  // Without deletion: [20,F0]+[9F] → [20,F0,9F] (rank 41009) → all space+emoji give 3 tokens.
+  // With deletion: [20,F0]+[9F,xx] where [9F,xx] injected → 3 tokens for api=3 emoji ✓.
+  //                [20,F0]+[9F]+... where [9F,xx] not injected → 4 tokens for api=4 emoji ✓.
+  delete vocab[Buffer.from([0x20, 0xF0, 0x9F]).toString('base64')];
 
   // Delete Xenova's aggressive repeated-byte merges (length > 2).
   // Probe confirmed: Claude only keeps pairs (e.g. "aa"), not triples/quadruples.
@@ -285,6 +307,9 @@ async function buildAnthropic() {
     '\u0630', // ذ  dhaal       D8 B0
     '\u0621', // ء  hamza       D8 A1
     '\u0622', // آ  alef+madda  D8 A2
+    // "..." — NFKC converts "…"→"..." but Xenova only has " ..." not "...".
+    // Inject "..." so bare ellipsis gives 1 token (api=1 ✓). " ..."=rank 2593 already ✓.
+    '...',
     // Japanese/CJK single chars missing from Xenova (2-byte prefix is present)
     '\u4E16', // 世  E4 B8 96
     '\u6A5F', // 機  E6 A9 9F
@@ -304,17 +329,19 @@ async function buildAnthropic() {
     }
   }
 
-  // Remove Xenova multi-char CJK merges that Claude does NOT have.
-  // Probed against Claude API: these pairs give api=2 (separate chars) but our
-  // Xenova vocab merges them to 1 token, causing under-counting.
-  const removeMultiCharCJK = [
+  // Remove Xenova multi-char merges that Claude does NOT have.
+  // Probed against Claude API: these sequences give api≥2 but Xenova merges to 1 token.
+  const removeMultiCharMerges = [
+    // CJK
     '正在', // U+6B63 U+5728 — zh "currently"  (probe: api≠our, confirmed over-merge)
     '学习', // U+5B66 U+4E60 — zh "study/learn" (appears 2x in zh sample)
     '模型', // U+6A21 U+578B — zh "model"
     '可以', // U+53EF U+4EE5 — zh "can/able to"
     // NOTE: "生成" (U+751F U+6210) KEPT — Claude has this merged in both zh and ja
+    // NOTE: "ال" (Arabic definite article) was tested but reverted — probe overhead
+    // jitter made api=2 look wrong; it's a key BPE building block for longer Arabic tokens.
   ];
-  for (const ch of removeMultiCharCJK) {
+  for (const ch of removeMultiCharMerges) {
     const b64 = Buffer.from(ch, 'utf8').toString('base64');
     delete vocab[b64];
   }

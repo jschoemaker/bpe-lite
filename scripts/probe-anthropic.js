@@ -119,18 +119,119 @@ async function main() {
     await probe(' ' + name, ' ' + emoji);
   }
 
-  // ─── Arabic ───────────────────────────────────────────────────────────────
-  section('Arabic individual chars');
-  const arabicSample = 'يغيرالذكاء';
-  const seenA = new Set();
-  for (const ch of arabicSample) {
-    if (seenA.has(ch)) continue; seenA.add(ch);
+  // ─── Arabic — all common letters individually ─────────────────────────────
+  section('Arabic letters — D8 block (U+0620–U+063F)');
+  const arabicLettersD8 = [
+    '\u0621', // ء  hamza      D8 A1
+    '\u0622', // آ  alef madda D8 A2
+    '\u0623', // أ  alef hmza  D8 A3
+    '\u0624', // ؤ  waw hamza  D8 A4
+    '\u0625', // إ  alef below D8 A5
+    '\u0626', // ئ  ya hamza   D8 A6
+    '\u0627', // ا  alef       D8 A7
+    '\u0628', // ب  ba         D8 A8
+    '\u0629', // ة  ta marbuta D8 A9
+    '\u062A', // ت  ta         D8 AA
+    '\u062B', // ث  tha        D8 AB
+    '\u062C', // ج  jeem       D8 AC
+    '\u062D', // ح  hha        D8 AD
+    '\u062E', // خ  kha        D8 AE
+    '\u062F', // د  dal        D8 AF
+    '\u0630', // ذ  dhal       D8 B0
+    '\u0631', // ر  ra         D8 B1
+    '\u0632', // ز  zain       D8 B2
+    '\u0633', // س  seen       D8 B3
+    '\u0634', // ش  sheen      D8 B4
+    '\u0635', // ص  sad        D8 B5
+    '\u0636', // ض  dad        D8 B6
+    '\u0637', // ط  ta emph    D8 B7
+    '\u0638', // ظ  dha        D8 B8
+    '\u0639', // ع  ain        D8 B9
+    '\u063A', // غ  ghain      D8 BA
+  ];
+  for (const ch of arabicLettersD8) {
     await probe('U+' + ch.codePointAt(0).toString(16) + ' (' + ch + ')', ch);
   }
 
-  section('Arabic bigrams');
-  for (let i = 0; i < arabicSample.length - 1; i++) {
-    await probe(arabicSample[i] + arabicSample[i+1], arabicSample[i] + arabicSample[i+1]);
+  section('Arabic letters — D9 block (U+0641–U+064A)');
+  const arabicLettersD9 = [
+    '\u0641', // ف  fa         D9 81
+    '\u0642', // ق  qaf        D9 82
+    '\u0643', // ك  kaf        D9 83
+    '\u0644', // ل  lam        D9 84
+    '\u0645', // م  meem       D9 85
+    '\u0646', // ن  noon       D9 86
+    '\u0647', // ه  ha         D9 87
+    '\u0648', // و  waw        D9 88
+    '\u0649', // ى  alef maks  D9 89
+    '\u064A', // ي  ya         D9 8A
+    '\u064B', // ◌ً  fathatan   D9 8B
+    '\u064C', // ◌ٌ  dammatan   D9 8C
+    '\u064E', // ◌َ  fatha      D9 8E
+    '\u064F', // ◌ُ  damma      D9 8F
+    '\u0650', // ◌ِ  kasra      D9 90
+    '\u0651', // ◌ّ  shadda     D9 91
+  ];
+  for (const ch of arabicLettersD9) {
+    await probe('U+' + ch.codePointAt(0).toString(16) + ' (' + ch + ')', ch);
+  }
+
+  section('Arabic common bigrams');
+  const arabicBigrams = [
+    'ال', 'لا', 'في', 'من', 'عل', 'ها', 'ية', 'وا',
+    'ان', 'ما', 'نا', 'ير', 'كا', 'ار', 'اء', 'لل',
+    'ذي', 'غي', 'كذ', 'اك', 'لذ', 'را', 'ذا', 'كاء',
+  ];
+  for (const pair of arabicBigrams) {
+    await probe(JSON.stringify(pair), pair);
+  }
+
+  // ─── Whitespace ───────────────────────────────────────────────────────────
+  section('Repeated spaces');
+  for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32]) {
+    await probe('space×' + n, ' '.repeat(n));
+  }
+
+  section('Repeated tabs');
+  for (const n of [1, 2, 3, 4, 6, 8]) {
+    await probe('tab×' + n, '\t'.repeat(n));
+  }
+
+  section('Mixed whitespace');
+  for (const [label, text] of [
+    ['2sp+tab', '  \t'],
+    ['tab+2sp', '\t  '],
+    ['4sp+nl', '    \n'],
+    ['sp+tab+sp', ' \t '],
+    ['2tab', '\t\t'],
+    ['nl+4sp', '\n    '],
+  ]) {
+    await probe(label, text);
+  }
+
+  // ─── Repeated punctuation ─────────────────────────────────────────────────
+  section('Repeated punctuation chars');
+  for (const ch of ['-', '_', '.', '*', '=', '#', '~', '/']) {
+    for (const n of [2, 3, 4, 8, 16]) {
+      await probe(ch + '×' + n, ch.repeat(n));
+    }
+  }
+
+  // ─── More emoji ───────────────────────────────────────────────────────────
+  section('More emoji (bare)');
+  const moreEmojis = [
+    ['\u{1F923}', 'rofl'],   ['\u{1F970}', 'smiling-hearts'],
+    ['\u{1F621}', 'angry'],  ['\u{1F622}', 'cry'],
+    ['\u{1F631}', 'scream'], ['\u{1F643}', 'upside-down'],
+    ['\u{1F4AF}', '100'],    ['\u{1F525}', 'fire2'],
+    ['\u{2728}',  'sparkles'], ['\u{1F973}', 'party-face'],
+    ['\u{1F91D}', 'handshake'], ['\u{1F4AA}', 'flexed'],
+    ['\u{1F9E0}', 'brain'],  ['\u{1F499}', 'blue-heart'],
+    ['\u{1F4B0}', 'money-bag'], ['\u{1F4C8}', 'chart-up'],
+    ['\u{26A1}',  'lightning'], ['\u{1F48E}', 'gem'],
+  ];
+  for (const [emoji, name] of moreEmojis) {
+    await probe(name, emoji);
   }
 
   // ─── CJK ──────────────────────────────────────────────────────────────────
