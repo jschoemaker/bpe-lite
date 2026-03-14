@@ -283,11 +283,34 @@ async function buildAnthropic() {
   // Delete Xenova's aggressive repeated-byte merges (length > 2).
   // Probe confirmed: Claude only keeps pairs (e.g. "aa"), not triples/quadruples.
   // Xenova has "aaa", "aaaa", "aaaaaaaa" etc. → hugely over-merges repeated chars.
+  // NOTE: whitespace injections (below) must come AFTER this block — otherwise
+  // the space×3..32 sequences (all-same bytes, length>2) would be deleted here.
   for (const b64 of Object.keys(vocab)) {
     const bytes = Buffer.from(b64, 'base64');
     if (bytes.length > 2 && bytes.every(b => b === bytes[0])) {
       delete vocab[b64];
     }
+  }
+
+  // Inject long whitespace sequences that Claude has as single tokens.
+  // Probe confirmed: space×3..32 = api=1, tab×2..8 = api=1, nl×2..8 = api=1.
+  // Rank 0 = highest BPE merge priority — ensures chain merges complete before
+  // smaller pairs (e.g. after "  " forms, ("  "," ")→"   " at rank 0 beats any
+  // subsequent (" "," ") at Xenova's native rank for "  ").
+  // Xenova's native "  " (2-space) is already at rank 0 (its native Xenova rank).
+  // Space×3..32, tab×2..8, nl×2..8 assigned rank 0 as well (same priority level —
+  // different keys so no collision; BPE tie-breaks leftmost).
+  for (let n = 3; n <= 32; n++) {
+    const b64 = Buffer.from(' '.repeat(n), 'utf8').toString('base64');
+    vocab[b64] = 0;
+  }
+  for (let n = 2; n <= 8; n++) {
+    const b64 = Buffer.from('\t'.repeat(n), 'utf8').toString('base64');
+    vocab[b64] = 0;
+  }
+  for (let n = 2; n <= 8; n++) {
+    const b64 = Buffer.from('\n'.repeat(n), 'utf8').toString('base64');
+    vocab[b64] = 0;
   }
 
   // Inject single-char tokens that Xenova never learned to merge but Claude has.
