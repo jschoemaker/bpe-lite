@@ -1,0 +1,45 @@
+{
+  "name": "bpe-lite",
+  "version": "0.5.1",
+  "description": "Offline BPE tokenizer for OpenAI, Anthropic, and Gemini — zero dependencies",
+  "main": "src/index.js",
+  "types": "index.d.ts",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.mjs",
+      "require": "./src/index.js"
+    }
+  },
+  "files": [
+    "src/",
+    "vocabs/",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-vocabs.js",
+    "bench": "node --expose-gc scripts/bench.js",
+    "compat": "node scripts/compat.js",
+    "test": "node tests/run-tests.js"
+  },
+  "keywords": [
+    "tokenizer",
+    "bpe",
+    "openai",
+    "anthropic",
+    "gemini",
+    "tokens",
+    "llm"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "ai-tokenizer": "^1.0.6",
+    "js-tiktoken": "^1.0.21"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jschoemaker/bpe-lite"
+  }
+}
