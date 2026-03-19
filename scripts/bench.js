@@ -10,6 +10,10 @@
  * Notes:
  * - Numbers vary by machine; treat as directional.
  * - We benchmark "encode" because it dominates token counting work.
+ * - bpe-lite uses a per-instance chunk-level cache. After warmup, measurement
+ *   iterations are all cache hits (~32% faster than cold for this text, since the
+ *   benchmark text is highly repetitive — only ~71 unique chunks in the large case).
+ *   First-call latency on novel diverse text will be lower than reported ops/s.
  */
 
 const bpeLite = require('../src/index');

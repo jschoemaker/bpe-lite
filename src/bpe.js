@@ -6,6 +6,10 @@
  * Lower rank = higher priority in merges.
  */
 
+// Fast check: does a pre-tokenized chunk contain any letter or digit?
+// Non-word chunks (pure symbols, punctuation, spaces) are eligible for batching.
+const WORD_CHAR_RE = /[\p{L}\p{N}]/u;
+
 // Byte → single-byte "binary string" lookup (pre-built at module load)
 const BYTE_STRS = (() => {
   const out = new Array(256);
@@ -170,6 +174,9 @@ function buildPreparedTiktoken(vocabData) {
     specials,
     patternCompiled: compilePretokenizer(pattern),
     normalize: normalize || null,
+    // symbolBatch: merge consecutive non-word regex chunks before BPE so that
+    // cross-character byte merges can fire (matches Claude's no-regex byte BPE).
+    symbolBatch: !!vocabData.symbolBatch,
     // opt A — per-instance chunk cache: chunk string → ids[]
     cache: new Map(),
     // opt B — per-instance grow-only scratch (reused across chunks)
@@ -323,14 +330,41 @@ function encodeTiktokenPrepared(text, prepared) {
       const re = patternCompiled.re;
       re.lastIndex = 0;
       let m;
-      while ((m = re.exec(t)) !== null) {
-        const chunk = m[0];
-        let chunkIds = cache.get(chunk);
-        if (chunkIds === undefined) {
-          chunkIds = bpeChunk(writeChunk(chunk), vocabBin, scratch);
-          cache.set(chunk, chunkIds);
+      if (prepared.symbolBatch) {
+        // Merge consecutive non-word chunks (symbols, punctuation, spaces) into one
+        // BPE input so cross-character byte merges can fire — matches Claude's behavior.
+        let symBuf = null;
+        while ((m = re.exec(t)) !== null) {
+          const chunk = m[0];
+          if (!WORD_CHAR_RE.test(chunk)) {
+            symBuf = symBuf === null ? chunk : symBuf + chunk;
+          } else {
+            if (symBuf !== null) {
+              let symIds = cache.get(symBuf);
+              if (symIds === undefined) { symIds = bpeChunk(writeChunk(symBuf), vocabBin, scratch); cache.set(symBuf, symIds); }
+              for (let i = 0; i < symIds.length; i++) ids.push(symIds[i]);
+              symBuf = null;
+            }
+            let chunkIds = cache.get(chunk);
+            if (chunkIds === undefined) { chunkIds = bpeChunk(writeChunk(chunk), vocabBin, scratch); cache.set(chunk, chunkIds); }
+            for (let i = 0; i < chunkIds.length; i++) ids.push(chunkIds[i]);
+          }
         }
-        for (let i = 0; i < chunkIds.length; i++) ids.push(chunkIds[i]);
+        if (symBuf !== null) {
+          let symIds = cache.get(symBuf);
+          if (symIds === undefined) { symIds = bpeChunk(writeChunk(symBuf), vocabBin, scratch); cache.set(symBuf, symIds); }
+          for (let i = 0; i < symIds.length; i++) ids.push(symIds[i]);
+        }
+      } else {
+        while ((m = re.exec(t)) !== null) {
+          const chunk = m[0];
+          let chunkIds = cache.get(chunk);
+          if (chunkIds === undefined) {
+            chunkIds = bpeChunk(writeChunk(chunk), vocabBin, scratch);
+            cache.set(chunk, chunkIds);
+          }
+          for (let i = 0; i < chunkIds.length; i++) ids.push(chunkIds[i]);
+        }
       }
     } else {
       const chunks = patternCompiled.type === 'none' ? [t] : (t.match(/\S+|\s+/g) || [t]);
@@ -376,14 +410,39 @@ function countTiktokenPrepared(text, prepared) {
       const re = patternCompiled.re;
       re.lastIndex = 0;
       let m;
-      while ((m = re.exec(t)) !== null) {
-        const chunk = m[0];
-        let chunkIds = cache.get(chunk);
-        if (chunkIds === undefined) {
-          chunkIds = bpeChunk(writeChunk(chunk), vocabBin, scratch);
-          cache.set(chunk, chunkIds);
+      if (prepared.symbolBatch) {
+        let symBuf = null;
+        while ((m = re.exec(t)) !== null) {
+          const chunk = m[0];
+          if (!WORD_CHAR_RE.test(chunk)) {
+            symBuf = symBuf === null ? chunk : symBuf + chunk;
+          } else {
+            if (symBuf !== null) {
+              let symIds = cache.get(symBuf);
+              if (symIds === undefined) { symIds = bpeChunk(writeChunk(symBuf), vocabBin, scratch); cache.set(symBuf, symIds); }
+              count += symIds.length;
+              symBuf = null;
+            }
+            let chunkIds = cache.get(chunk);
+            if (chunkIds === undefined) { chunkIds = bpeChunk(writeChunk(chunk), vocabBin, scratch); cache.set(chunk, chunkIds); }
+            count += chunkIds.length;
+          }
         }
-        count += chunkIds.length;
+        if (symBuf !== null) {
+          let symIds = cache.get(symBuf);
+          if (symIds === undefined) { symIds = bpeChunk(writeChunk(symBuf), vocabBin, scratch); cache.set(symBuf, symIds); }
+          count += symIds.length;
+        }
+      } else {
+        while ((m = re.exec(t)) !== null) {
+          const chunk = m[0];
+          let chunkIds = cache.get(chunk);
+          if (chunkIds === undefined) {
+            chunkIds = bpeChunk(writeChunk(chunk), vocabBin, scratch);
+            cache.set(chunk, chunkIds);
+          }
+          count += chunkIds.length;
+        }
       }
     } else {
       const chunks = patternCompiled.type === 'none' ? [t] : (t.match(/\S+|\s+/g) || [t]);

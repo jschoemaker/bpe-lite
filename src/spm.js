@@ -86,10 +86,8 @@ function encodeSPM(text, vocabData) {
  * Isolated from encodeSegment so V8 can keep this function optimised
  * even when encodeSPMPrepared is called with wildly different text lengths.
  *
- * Segmentation: for a run of N consecutive ▁ chars before a word:
- *   N=1 → one segment [▁word]
- *   N>1 → two segments [▁×(N-1), ▁word]
- * This matches how Gemma BPE merges multi-space tokens (▁▁=138, ▁▁▁=139, …).
+ * Segmentation: each run of ▁ chars plus the following non-▁ word is one segment.
+ * Leading ▁s are included so BPE can naturally merge ▁▁→138, ▁▁▁→139, etc.
  */
 function _scanFromCache(normalized, cache, result) {
   let i = 0;
@@ -113,20 +111,11 @@ function _scanFromCache(normalized, cache, result) {
     // Collect word chars (non-▁)
     while (i < normalized.length && normalized[i] !== SPACE_CHAR) i++;
 
-    // If N>1 spaces, emit (N-1) ▁s as standalone segment first
-    if (spaceCount > 1) {
-      const spaceSeg = normalized.slice(segStart, segStart + spaceCount - 1);
-      const spaceIds = cache.get(spaceSeg);
-      if (spaceIds === undefined) return false;
-      for (let j = 0; j < spaceIds.length; j++) result.push(spaceIds[j]);
-    }
-
-    // Emit ▁ + word as one segment
-    const wordStart = spaceCount > 0 ? segStart + spaceCount - 1 : segStart;
-    const wordSeg = normalized.slice(wordStart, i);
-    const wordIds = cache.get(wordSeg);
-    if (wordIds === undefined) return false;
-    for (let j = 0; j < wordIds.length; j++) result.push(wordIds[j]);
+    // Emit all leading ▁s + word as one segment; BPE merges ▁▁, ▁▁▁, etc.
+    const seg = normalized.slice(segStart, i);
+    const segIds = cache.get(seg);
+    if (segIds === undefined) return false;
+    for (let j = 0; j < segIds.length; j++) result.push(segIds[j]);
   }
   return true;
 }
@@ -163,7 +152,7 @@ function encodeSPMPrepared(text, prepared) {
     if (i === normalized.length) {
       if (spaceCount > 0) {
         const seg = normalized.slice(segStart, i);
-        const segIds = cache.get(seg) ?? _encodeAndCache(seg, vocab, mergeRank, scratch, cache);
+        const segIds = cache.get(seg) ?? _encodeAndCache(seg, vocab, mergeRank, scratch, cache, seedsByAngleBracket);
         for (let j = 0; j < segIds.length; j++) result.push(segIds[j]);
       }
       break;
@@ -171,16 +160,9 @@ function encodeSPMPrepared(text, prepared) {
 
     while (i < normalized.length && normalized[i] !== SPACE_CHAR) i++;
 
-    if (spaceCount > 1) {
-      const spaceSeg = normalized.slice(segStart, segStart + spaceCount - 1);
-      const spaceIds = cache.get(spaceSeg) ?? _encodeAndCache(spaceSeg, vocab, mergeRank, scratch, cache);
-      for (let j = 0; j < spaceIds.length; j++) result.push(spaceIds[j]);
-    }
-
-    const wordStart = spaceCount > 0 ? segStart + spaceCount - 1 : segStart;
-    const wordSeg = normalized.slice(wordStart, i);
-    const wordIds = cache.get(wordSeg) ?? _encodeAndCache(wordSeg, vocab, mergeRank, scratch, cache);
-    for (let j = 0; j < wordIds.length; j++) result.push(wordIds[j]);
+    const seg = normalized.slice(segStart, i);
+    const segIds = cache.get(seg) ?? _encodeAndCache(seg, vocab, mergeRank, scratch, cache, seedsByAngleBracket);
+    for (let j = 0; j < segIds.length; j++) result.push(segIds[j]);
   }
   return result;
 }
